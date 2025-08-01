@@ -2294,13 +2294,19 @@ if __name__ == "__main__":
     try:
         # Run server with the specified transport
         if args.transport == "http":
-            fastmcp.settings.host = transport_config["host"]
-            fastmcp.settings.port = transport_config["port"]
-            mcp.run(transport="streamable-http", log_level=log_level)
+            mcp.run(
+                transport="streamable-http", 
+                host=transport_config["host"], 
+                port=transport_config["port"],
+                log_level=log_level
+            )
         elif args.transport == "sse":
-            fastmcp.settings.host = transport_config["host"]
-            fastmcp.settings.port = transport_config["port"]
-            mcp.run(transport="sse", log_level=log_level)
+            mcp.run(
+                transport="sse", 
+                host=transport_config["host"], 
+                port=transport_config["port"],
+                log_level=log_level
+            )
         else:
             mcp.run(transport="stdio", log_level=log_level)
     except Exception as e:
