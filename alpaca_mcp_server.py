@@ -149,8 +149,8 @@ class PocketIdAuthProvider(AuthProvider):
                 })
         
         # Add discovery routes
-        routes.append(Route("/.well-known/oauth-protected-resource", oauth_protected_resource))
-        routes.append(Route("/.well-known/oauth-authorization-server", oauth_authorization_server))
+        routes.append(Route("/.well-known/oauth-protected-resource", oauth_protected_resource, methods=["GET"]))
+        routes.append(Route("/.well-known/oauth-authorization-server", oauth_authorization_server, methods=["GET"]))
         return routes
 
 def setup_auth_provider():
@@ -227,7 +227,7 @@ if not is_pycharm and __name__ == "__main__":
     print(f"MCP Server starting with transport={args.transport}, log_level={log_level}, auth={auth_status} (PyCharm detected: {is_pycharm})")
 
 # Create FastMCP server with optional authentication
-mcp = FastMCP("alpaca-trading", log_level=log_level, auth=auth_provider)
+mcp = FastMCP("alpaca-trading", auth=auth_provider)
 
 # Initialize Alpaca clients using environment variables
 # Import our .env file within the same directory
@@ -2295,13 +2295,13 @@ if __name__ == "__main__":
         if args.transport == "http":
             mcp.settings.host = transport_config["host"]
             mcp.settings.port = transport_config["port"]
-            mcp.run(transport="streamable-http")
+            mcp.run(transport="streamable-http", log_level=log_level)
         elif args.transport == "sse":
             mcp.settings.host = transport_config["host"]
             mcp.settings.port = transport_config["port"]
-            mcp.run(transport="sse")
+            mcp.run(transport="sse", log_level=log_level)
         else:
-            mcp.run(transport="stdio")
+            mcp.run(transport="stdio", log_level=log_level)
     except Exception as e:
         if args.transport in ["http", "sse"]:
             print(f"Error starting {args.transport} server: {e}")
