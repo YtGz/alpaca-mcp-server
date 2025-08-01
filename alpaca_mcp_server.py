@@ -58,6 +58,7 @@ from alpaca.trading.requests import (
 )
 
 from fastmcp import FastMCP
+import fastmcp
 from fastmcp.server.auth.auth import AuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from mcp.server.auth.provider import AccessToken
@@ -2293,12 +2294,12 @@ if __name__ == "__main__":
     try:
         # Run server with the specified transport
         if args.transport == "http":
-            mcp.settings.host = transport_config["host"]
-            mcp.settings.port = transport_config["port"]
+            fastmcp.settings.host = transport_config["host"]
+            fastmcp.settings.port = transport_config["port"]
             mcp.run(transport="streamable-http", log_level=log_level)
         elif args.transport == "sse":
-            mcp.settings.host = transport_config["host"]
-            mcp.settings.port = transport_config["port"]
+            fastmcp.settings.host = transport_config["host"]
+            fastmcp.settings.port = transport_config["port"]
             mcp.run(transport="sse", log_level=log_level)
         else:
             mcp.run(transport="stdio", log_level=log_level)
