@@ -64,6 +64,7 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from mcp.server.auth.provider import AccessToken
 from starlette.routing import Route
 from starlette.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -233,26 +234,60 @@ mcp = FastMCP("alpaca-trading", auth=auth_provider)
 
 # Add OAuth discovery endpoints at root level using custom_route (only when OAuth is configured)
 if auth_provider:
-    @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+    @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET", "OPTIONS"])
     async def oauth_protected_resource_endpoint(request):
         """OAuth protected resource discovery endpoint."""
-        return JSONResponse({
-            "resource": "https://alpaca.mcp.datawarp.dev",
-            "authorization_servers": [auth_provider.pocket_id_domain],
-            "bearer_methods_supported": ["header"],
-            "resource_documentation": "https://github.com/YtGz/alpaca-mcp-server"
-        })
+        # Handle CORS preflight
+        if request.method == "OPTIONS":
+            return JSONResponse(
+                content={},
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        
+        return JSONResponse(
+            content={
+                "resource": "https://alpaca.mcp.datawarp.dev",
+                "authorization_servers": [auth_provider.pocket_id_domain],
+                "bearer_methods_supported": ["header"],
+                "resource_documentation": "https://github.com/YtGz/alpaca-mcp-server"
+            },
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "*",
+            }
+        )
 
-    @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])
+    @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET", "OPTIONS"])
     async def oauth_authorization_server_endpoint(request):
         """OAuth authorization server metadata endpoint."""
+        # Handle CORS preflight
+        if request.method == "OPTIONS":
+            return JSONResponse(
+                content={},
+                headers={
+                    "Access-Control-Allow-Origin": "*",
+                    "Access-Control-Allow-Methods": "GET, OPTIONS",
+                    "Access-Control-Allow-Headers": "*",
+                }
+            )
+        
         import httpx
+        cors_headers = {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
+        }
         
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{auth_provider.pocket_id_domain}/.well-known/oauth-authorization-server")
                 if response.status_code == 200:
-                    return JSONResponse(response.json())
+                    return JSONResponse(response.json(), headers=cors_headers)
                 else:
                     # Fallback metadata if Pocket ID doesn't provide this endpoint
                     return JSONResponse({
@@ -266,7 +301,7 @@ if auth_provider:
                         "grant_types_supported": ["authorization_code", "client_credentials"],
                         "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
                         "code_challenge_methods_supported": ["S256"]
-                    })
+                    }, headers=cors_headers)
         except Exception:
             # Fallback metadata if network request fails
             return JSONResponse({
@@ -274,7 +309,7 @@ if auth_provider:
                 "authorization_endpoint": f"{auth_provider.pocket_id_domain}/authorize",
                 "token_endpoint": f"{auth_provider.pocket_id_domain}/token",
                 "jwks_uri": f"{auth_provider.pocket_id_domain}/.well-known/jwks.json"
-            })
+            }, headers=cors_headers)
 
 
 # Initialize Alpaca clients using environment variables
