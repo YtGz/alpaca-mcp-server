@@ -57,7 +57,8 @@ from alpaca.trading.requests import (
     UpdateWatchlistRequest,
 )
 
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.server.auth.verifiers import JWTVerifier
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -79,6 +80,22 @@ def detect_pycharm_environment():
     """
     mcp_client = os.getenv("MCP_CLIENT", "").lower()
     return mcp_client == "pycharm"
+
+def setup_auth_verifier():
+    """Setup JWT authentication verifier for Pocket ID if OAuth is configured."""
+    pocket_id_domain = os.getenv("POCKET_ID_DOMAIN")
+    client_id = os.getenv("POCKET_ID_CLIENT_ID")
+    
+    if pocket_id_domain and client_id:
+        # Remove trailing slash for consistency
+        domain = pocket_id_domain.rstrip('/')
+        
+        return JWTVerifier(
+            jwks_uri=f"{domain}/.well-known/jwks.json",
+            issuer=domain,
+            audience=client_id
+        )
+    return None
 
 def parse_arguments():
     """Parse command line arguments for transport configuration."""
@@ -131,16 +148,21 @@ class DefaultArgs:
 # Only parse arguments when running as main script, use defaults when imported
 args = DefaultArgs()
 
-# Initialize FastMCP server with intelligent log level detection
+# Initialize FastMCP server with intelligent log level detection and optional auth
 is_pycharm = detect_pycharm_environment()
 log_level = "ERROR" if is_pycharm else "INFO"
+
+# Setup authentication verifier for HTTP transport
+auth_verifier = setup_auth_verifier()
 
 # Optional: Print detection result for debugging (only in non-PyCharm environments)
 # Only print when running as main script to avoid noise when imported
 if not is_pycharm and __name__ == "__main__":
-    print(f"MCP Server starting with transport={args.transport}, log_level={log_level} (PyCharm detected: {is_pycharm})")
+    auth_status = "enabled" if auth_verifier else "disabled"
+    print(f"MCP Server starting with transport={args.transport}, log_level={log_level}, auth={auth_status} (PyCharm detected: {is_pycharm})")
 
-mcp = FastMCP("alpaca-trading", log_level=log_level)
+# Create FastMCP server with optional authentication
+mcp = FastMCP("alpaca-trading", log_level=log_level, auth=auth_verifier)
 
 # Initialize Alpaca clients using environment variables
 # Import our .env file within the same directory

@@ -4,22 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "18247:8000"
     environment:
       - ALPACA_API_KEY=${ALPACA_API_KEY}
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
       - ALPACA_PAPER_TRADE=${ALPACA_PAPER_TRADE:-True}
-      # OAuth Configuration for Pocket ID
+      # OAuth Configuration for Pocket ID (server-side JWT validation only)
       - POCKET_ID_DOMAIN=${POCKET_ID_DOMAIN}
       - POCKET_ID_CLIENT_ID=${POCKET_ID_CLIENT_ID}
-      - POCKET_ID_CLIENT_SECRET=${POCKET_ID_CLIENT_SECRET}
-      - OAUTH_REDIRECT_URI=${OAUTH_REDIRECT_URI:-http://localhost:8000/oauth/callback}
-    volumes:
-      # Persistent OAuth token storage
-      - oauth-cache:/app/.oauth-cache
     restart: unless-stopped
     command: ["uv", "run", "python", "alpaca_mcp_server.py", "--transport", "http", "--host", "0.0.0.0", "--port", "8000"]
-
-volumes:
-  oauth-cache:
-    driver: local

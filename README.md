@@ -164,13 +164,37 @@ To use Alpaca MCP Server with Claude Desktop, please follow the steps below. The
 }
 ```
 
-**For remote usage (HTTP transport):**
+**For remote usage (HTTP transport without authentication):**
 ```json
 {
   "mcpServers": {
     "alpaca": {
       "transport": "http",
       "url": "http://your-server-ip:8000/mcp",
+      "env": {
+        "ALPACA_API_KEY": "your_alpaca_api_key_for_paper_account",
+        "ALPACA_SECRET_KEY": "your_alpaca_secret_key_for_paper_account"
+      }
+    }
+  }
+}
+```
+
+**For remote usage (HTTP transport with OAuth authentication):**
+```json
+{
+  "mcpServers": {
+    "alpaca": {
+      "transport": "http",
+      "url": "https://alpaca.mcp.datawarp.dev/mcp",
+      "authorization": {
+        "type": "oauth",
+        "authorization_url": "https://auth.datawarp.dev/authorize",
+        "token_url": "https://auth.datawarp.dev/token",
+        "client_id": "your_pocket_id_client_id",
+        "client_secret": "your_pocket_id_client_secret",
+        "scopes": ["openid", "profile"]
+      },
       "env": {
         "ALPACA_API_KEY": "your_alpaca_api_key_for_paper_account",
         "ALPACA_SECRET_KEY": "your_alpaca_secret_key_for_paper_account"
@@ -626,6 +650,60 @@ These examples demonstrate the server's ability to provide:
 - Well-formatted, easy-to-read responses
 
 The server maintains this level of detail and formatting across all supported queries, making it easy to understand and act on the information provided.
+
+## OAuth Authentication (Optional)
+
+The Alpaca MCP Server supports OAuth 2.1 authentication via Pocket ID for secure HTTP transport. This is optional but recommended for production deployments.
+
+### Server Configuration
+
+Configure the server with OAuth JWT validation by setting these environment variables:
+
+```bash
+# Required for server-side JWT token validation
+POCKET_ID_DOMAIN=https://auth.datawarp.dev
+POCKET_ID_CLIENT_ID=your_pocket_id_client_id
+```
+
+The server will automatically enable OAuth authentication when these variables are present.
+
+### Client Configuration
+
+MCP clients must be configured with OAuth credentials to authenticate:
+
+**Claude Desktop Configuration:**
+```json
+{
+  "mcpServers": {
+    "alpaca": {
+      "transport": "http",
+      "url": "https://alpaca.mcp.datawarp.dev/mcp",
+      "authorization": {
+        "type": "oauth",
+        "authorization_url": "https://auth.datawarp.dev/authorize",
+        "token_url": "https://auth.datawarp.dev/token",
+        "client_id": "your_pocket_id_client_id",
+        "client_secret": "your_pocket_id_client_secret",
+        "scopes": ["openid", "profile"]
+      },
+      "env": {
+        "ALPACA_API_KEY": "your_alpaca_api_key",
+        "ALPACA_SECRET_KEY": "your_alpaca_secret_key"
+      }
+    }
+  }
+}
+```
+
+### Pocket ID Setup
+
+1. Create an OIDC client in Pocket ID at `https://auth.datawarp.dev/settings/admin/oidc-clients`
+2. Configure:
+   - **Name**: `Alpaca MCP Server`
+   - **Callback URLs**: `https://alpaca.mcp.datawarp.dev/oauth/callback`
+   - **Public Client**: ❌ (Uncheck - confidential client)
+   - **PKCE**: ✅ (Check - required by MCP specification)
+3. Note the generated Client ID and Client Secret for MCP client configuration
 
 ## HTTP Transport for Remote Usage
 
