@@ -59,6 +59,7 @@ from alpaca.trading.requests import (
 
 from fastmcp import FastMCP
 from fastmcp.server.auth.verifiers import JWTVerifier
+from fastmcp.server.auth.providers import AuthProvider
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -81,20 +82,77 @@ def detect_pycharm_environment():
     mcp_client = os.getenv("MCP_CLIENT", "").lower()
     return mcp_client == "pycharm"
 
-def setup_auth_verifier():
-    """Setup JWT authentication verifier for Pocket ID if OAuth is configured."""
+class PocketIdAuthProvider(AuthProvider):
+    """Remote authentication provider for Pocket ID following FastMCP guidelines."""
+    
+    def __init__(self, pocket_id_domain: str, client_id: str):
+        self.pocket_id_domain = pocket_id_domain.rstrip('/')
+        self.client_id = client_id
+        
+        # Create JWT verifier for token validation
+        self.jwt_verifier = JWTVerifier(
+            jwks_uri=f"{self.pocket_id_domain}/.well-known/jwks.json",
+            issuer=self.pocket_id_domain,
+            audience=client_id
+        )
+    
+    async def verify_token(self, token: str) -> dict:
+        """Verify JWT token using Pocket ID's public keys."""
+        return await self.jwt_verifier.verify_token(token)
+    
+    def customize_auth_routes(self, app):
+        """Add required OAuth discovery endpoints."""
+        
+        @app.get("/.well-known/oauth-protected-resource")
+        async def oauth_protected_resource():
+            """Required endpoint for OAuth protected resource discovery."""
+            return {
+                "resource": "https://alpaca.mcp.datawarp.dev",
+                "authorization_servers": [self.pocket_id_domain],
+                "bearer_methods_supported": ["header"],
+                "resource_documentation": "https://github.com/YtGz/alpaca-mcp-server"
+            }
+        
+        @app.get("/.well-known/oauth-authorization-server")
+        async def oauth_authorization_server():
+            """Forward authorization server metadata from Pocket ID."""
+            import httpx
+            
+            try:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(f"{self.pocket_id_domain}/.well-known/oauth-authorization-server")
+                    if response.status_code == 200:
+                        return response.json()
+                    else:
+                        # Fallback metadata if Pocket ID doesn't provide this endpoint
+                        return {
+                            "issuer": self.pocket_id_domain,
+                            "authorization_endpoint": f"{self.pocket_id_domain}/authorize",
+                            "token_endpoint": f"{self.pocket_id_domain}/token",
+                            "jwks_uri": f"{self.pocket_id_domain}/.well-known/jwks.json",
+                            "userinfo_endpoint": f"{self.pocket_id_domain}/userinfo",
+                            "scopes_supported": ["openid", "profile", "email"],
+                            "response_types_supported": ["code"],
+                            "grant_types_supported": ["authorization_code", "client_credentials"],
+                            "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+                            "code_challenge_methods_supported": ["S256"]
+                        }
+            except Exception:
+                # Fallback metadata if network request fails
+                return {
+                    "issuer": self.pocket_id_domain,
+                    "authorization_endpoint": f"{self.pocket_id_domain}/authorize",
+                    "token_endpoint": f"{self.pocket_id_domain}/token",
+                    "jwks_uri": f"{self.pocket_id_domain}/.well-known/jwks.json"
+                }
+
+def setup_auth_provider():
+    """Setup Pocket ID authentication provider if OAuth is configured."""
     pocket_id_domain = os.getenv("POCKET_ID_DOMAIN")
     client_id = os.getenv("POCKET_ID_CLIENT_ID")
     
     if pocket_id_domain and client_id:
-        # Remove trailing slash for consistency
-        domain = pocket_id_domain.rstrip('/')
-        
-        return JWTVerifier(
-            jwks_uri=f"{domain}/.well-known/jwks.json",
-            issuer=domain,
-            audience=client_id
-        )
+        return PocketIdAuthProvider(pocket_id_domain, client_id)
     return None
 
 def parse_arguments():
@@ -152,17 +210,17 @@ args = DefaultArgs()
 is_pycharm = detect_pycharm_environment()
 log_level = "ERROR" if is_pycharm else "INFO"
 
-# Setup authentication verifier for HTTP transport
-auth_verifier = setup_auth_verifier()
+# Setup authentication provider for HTTP transport
+auth_provider = setup_auth_provider()
 
 # Optional: Print detection result for debugging (only in non-PyCharm environments)
 # Only print when running as main script to avoid noise when imported
 if not is_pycharm and __name__ == "__main__":
-    auth_status = "enabled" if auth_verifier else "disabled"
+    auth_status = "enabled" if auth_provider else "disabled"
     print(f"MCP Server starting with transport={args.transport}, log_level={log_level}, auth={auth_status} (PyCharm detected: {is_pycharm})")
 
 # Create FastMCP server with optional authentication
-mcp = FastMCP("alpaca-trading", log_level=log_level, auth=auth_verifier)
+mcp = FastMCP("alpaca-trading", log_level=log_level, auth=auth_provider)
 
 # Initialize Alpaca clients using environment variables
 # Import our .env file within the same directory
