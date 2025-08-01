@@ -64,6 +64,9 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from mcp.server.auth.provider import AccessToken
 from starlette.routing import Route
 from starlette.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -85,6 +88,33 @@ def detect_pycharm_environment():
     """
     mcp_client = os.getenv("MCP_CLIENT", "").lower()
     return mcp_client == "pycharm"
+
+class PublicEndpointsMiddleware(BaseHTTPMiddleware):
+    """Middleware to bypass authentication for public OAuth discovery endpoints."""
+    
+    def __init__(self, app, public_paths: list[str] | None = None):
+        super().__init__(app)
+        self.public_paths = public_paths or ["/.well-known/"]
+    
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # Check if the request path should be public
+        path = request.url.path
+        is_public = any(path.startswith(public_path) for public_path in self.public_paths)
+        
+        if is_public:
+            # For public endpoints, temporarily remove auth headers to bypass authentication
+            original_headers = dict(request.headers)
+            # Remove authorization header to bypass auth middleware
+            if "authorization" in request.headers:
+                # Create a new scope without the authorization header
+                scope = request.scope.copy()
+                headers = [(name, value) for name, value in scope["headers"] 
+                          if name.lower() != b"authorization"]
+                scope["headers"] = headers
+                request = Request(scope)
+        
+        response = await call_next(request)
+        return response
 
 class PocketIdAuthProvider(AuthProvider):
     """Remote authentication provider for Pocket ID following FastMCP 2.11 guidelines."""
@@ -227,8 +257,13 @@ if not is_pycharm and __name__ == "__main__":
     auth_status = "enabled" if auth_provider else "disabled"
     print(f"MCP Server starting with transport={args.transport}, log_level={log_level}, auth={auth_status} (PyCharm detected: {is_pycharm})")
 
-# Create FastMCP server with optional authentication
-mcp = FastMCP("alpaca-trading", auth=auth_provider)
+# Create FastMCP server with optional authentication and public endpoints middleware
+middleware = []
+if auth_provider:
+    # Add middleware to bypass authentication for .well-known endpoints
+    middleware.append(PublicEndpointsMiddleware)
+
+mcp = FastMCP("alpaca-trading", auth=auth_provider, middleware=middleware)
 
 # Initialize Alpaca clients using environment variables
 # Import our .env file within the same directory
