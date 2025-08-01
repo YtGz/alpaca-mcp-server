@@ -64,9 +64,6 @@ from fastmcp.server.auth.providers.jwt import JWTVerifier
 from mcp.server.auth.provider import AccessToken
 from starlette.routing import Route
 from starlette.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -89,32 +86,6 @@ def detect_pycharm_environment():
     mcp_client = os.getenv("MCP_CLIENT", "").lower()
     return mcp_client == "pycharm"
 
-class PublicEndpointsMiddleware(BaseHTTPMiddleware):
-    """Middleware to bypass authentication for public OAuth discovery endpoints."""
-    
-    def __init__(self, app, public_paths: list[str] | None = None):
-        super().__init__(app)
-        self.public_paths = public_paths or ["/.well-known/"]
-    
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Check if the request path should be public
-        path = request.url.path
-        is_public = any(path.startswith(public_path) for public_path in self.public_paths)
-        
-        if is_public:
-            # For public endpoints, temporarily remove auth headers to bypass authentication
-            original_headers = dict(request.headers)
-            # Remove authorization header to bypass auth middleware
-            if "authorization" in request.headers:
-                # Create a new scope without the authorization header
-                scope = request.scope.copy()
-                headers = [(name, value) for name, value in scope["headers"] 
-                          if name.lower() != b"authorization"]
-                scope["headers"] = headers
-                request = Request(scope)
-        
-        response = await call_next(request)
-        return response
 
 class PocketIdAuthProvider(AuthProvider):
     """Remote authentication provider for Pocket ID following FastMCP 2.11 guidelines."""
@@ -257,13 +228,54 @@ if not is_pycharm and __name__ == "__main__":
     auth_status = "enabled" if auth_provider else "disabled"
     print(f"MCP Server starting with transport={args.transport}, log_level={log_level}, auth={auth_status} (PyCharm detected: {is_pycharm})")
 
-# Create FastMCP server with optional authentication and public endpoints middleware
-middleware = []
-if auth_provider:
-    # Add middleware to bypass authentication for .well-known endpoints
-    middleware.append(PublicEndpointsMiddleware)
+# Create FastMCP server with optional authentication
+mcp = FastMCP("alpaca-trading", auth=auth_provider)
 
-mcp = FastMCP("alpaca-trading", auth=auth_provider, middleware=middleware)
+# Add OAuth discovery endpoints at root level using custom_route (only when OAuth is configured)
+if auth_provider:
+    @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+    async def oauth_protected_resource_endpoint(request):
+        """OAuth protected resource discovery endpoint."""
+        return JSONResponse({
+            "resource": "https://alpaca.mcp.datawarp.dev",
+            "authorization_servers": [auth_provider.pocket_id_domain],
+            "bearer_methods_supported": ["header"],
+            "resource_documentation": "https://github.com/YtGz/alpaca-mcp-server"
+        })
+
+    @mcp.custom_route("/.well-known/oauth-authorization-server", methods=["GET"])
+    async def oauth_authorization_server_endpoint(request):
+        """OAuth authorization server metadata endpoint."""
+        import httpx
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{auth_provider.pocket_id_domain}/.well-known/oauth-authorization-server")
+                if response.status_code == 200:
+                    return JSONResponse(response.json())
+                else:
+                    # Fallback metadata if Pocket ID doesn't provide this endpoint
+                    return JSONResponse({
+                        "issuer": auth_provider.pocket_id_domain,
+                        "authorization_endpoint": f"{auth_provider.pocket_id_domain}/authorize",
+                        "token_endpoint": f"{auth_provider.pocket_id_domain}/token",
+                        "jwks_uri": f"{auth_provider.pocket_id_domain}/.well-known/jwks.json",
+                        "userinfo_endpoint": f"{auth_provider.pocket_id_domain}/userinfo",
+                        "scopes_supported": ["openid", "profile", "email"],
+                        "response_types_supported": ["code"],
+                        "grant_types_supported": ["authorization_code", "client_credentials"],
+                        "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+                        "code_challenge_methods_supported": ["S256"]
+                    })
+        except Exception:
+            # Fallback metadata if network request fails
+            return JSONResponse({
+                "issuer": auth_provider.pocket_id_domain,
+                "authorization_endpoint": f"{auth_provider.pocket_id_domain}/authorize",
+                "token_endpoint": f"{auth_provider.pocket_id_domain}/token",
+                "jwks_uri": f"{auth_provider.pocket_id_domain}/.well-known/jwks.json"
+            })
+
 
 # Initialize Alpaca clients using environment variables
 # Import our .env file within the same directory
