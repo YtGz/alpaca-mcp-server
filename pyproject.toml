@@ -5,7 +5,7 @@ description = "Model Context Protocol (MCP) server implementation for Alpaca's T
 requires-python = ">=3.10"
 dependencies = [
     "alpaca-py",
-    "fastmcp",
+    "fastmcp>=2.11",
     "python-dotenv",
     "httpx",
 ]

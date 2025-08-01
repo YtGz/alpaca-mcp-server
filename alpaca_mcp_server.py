@@ -58,8 +58,11 @@ from alpaca.trading.requests import (
 )
 
 from fastmcp import FastMCP
-from fastmcp.server.auth.verifiers import JWTVerifier
-from fastmcp.server.auth.providers import AuthProvider
+from fastmcp.server.auth.auth import AuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from mcp.server.auth.provider import AccessToken
+from starlette.routing import Route
+from starlette.responses import JSONResponse
 
 # Configure Python path for local imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -83,38 +86,37 @@ def detect_pycharm_environment():
     return mcp_client == "pycharm"
 
 class PocketIdAuthProvider(AuthProvider):
-    """Remote authentication provider for Pocket ID following FastMCP guidelines."""
+    """Remote authentication provider for Pocket ID following FastMCP 2.11 guidelines."""
     
     def __init__(self, pocket_id_domain: str, client_id: str):
+        super().__init__()
         self.pocket_id_domain = pocket_id_domain.rstrip('/')
         self.client_id = client_id
         
         # Create JWT verifier for token validation
-        self.jwt_verifier = JWTVerifier(
+        self.token_verifier = JWTVerifier(
             jwks_uri=f"{self.pocket_id_domain}/.well-known/jwks.json",
             issuer=self.pocket_id_domain,
             audience=client_id
         )
     
-    async def verify_token(self, token: str) -> dict:
+    async def verify_token(self, token: str) -> AccessToken | None:
         """Verify JWT token using Pocket ID's public keys."""
-        return await self.jwt_verifier.verify_token(token)
+        return await self.token_verifier.verify_token(token)
     
-    def customize_auth_routes(self, app):
+    def customize_auth_routes(self, routes: list[Route]) -> list[Route]:
         """Add required OAuth discovery endpoints."""
         
-        @app.get("/.well-known/oauth-protected-resource")
-        async def oauth_protected_resource():
+        async def oauth_protected_resource(request):
             """Required endpoint for OAuth protected resource discovery."""
-            return {
+            return JSONResponse({
                 "resource": "https://alpaca.mcp.datawarp.dev",
                 "authorization_servers": [self.pocket_id_domain],
                 "bearer_methods_supported": ["header"],
                 "resource_documentation": "https://github.com/YtGz/alpaca-mcp-server"
-            }
+            })
         
-        @app.get("/.well-known/oauth-authorization-server")
-        async def oauth_authorization_server():
+        async def oauth_authorization_server(request):
             """Forward authorization server metadata from Pocket ID."""
             import httpx
             
@@ -122,10 +124,10 @@ class PocketIdAuthProvider(AuthProvider):
                 async with httpx.AsyncClient() as client:
                     response = await client.get(f"{self.pocket_id_domain}/.well-known/oauth-authorization-server")
                     if response.status_code == 200:
-                        return response.json()
+                        return JSONResponse(response.json())
                     else:
                         # Fallback metadata if Pocket ID doesn't provide this endpoint
-                        return {
+                        return JSONResponse({
                             "issuer": self.pocket_id_domain,
                             "authorization_endpoint": f"{self.pocket_id_domain}/authorize",
                             "token_endpoint": f"{self.pocket_id_domain}/token",
@@ -136,15 +138,20 @@ class PocketIdAuthProvider(AuthProvider):
                             "grant_types_supported": ["authorization_code", "client_credentials"],
                             "token_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
                             "code_challenge_methods_supported": ["S256"]
-                        }
+                        })
             except Exception:
                 # Fallback metadata if network request fails
-                return {
+                return JSONResponse({
                     "issuer": self.pocket_id_domain,
                     "authorization_endpoint": f"{self.pocket_id_domain}/authorize",
                     "token_endpoint": f"{self.pocket_id_domain}/token",
                     "jwks_uri": f"{self.pocket_id_domain}/.well-known/jwks.json"
-                }
+                })
+        
+        # Add discovery routes
+        routes.append(Route("/.well-known/oauth-protected-resource", oauth_protected_resource))
+        routes.append(Route("/.well-known/oauth-authorization-server", oauth_authorization_server))
+        return routes
 
 def setup_auth_provider():
     """Setup Pocket ID authentication provider if OAuth is configured."""
