@@ -1,9 +1,22 @@
-FROM python:3.13-slim
+# Use the official uv Docker image
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 WORKDIR /app
 
-COPY . .
+# Install dependencies first (without installing the project)
+COPY uv.lock pyproject.toml /app/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-install-project
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy the application code
+COPY . /app
 
-CMD ["python", "alpaca_mcp_server.py"]
+# Install the project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --compile-bytecode
+
+# Expose the default port
+EXPOSE 8000
+
+# Run the application
+CMD ["uv", "run", "python", "alpaca_mcp_server.py"]

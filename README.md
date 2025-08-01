@@ -47,45 +47,37 @@ This is a Model Context Protocol (MCP) server implementation for Alpaca's Tradin
    cd alpaca-mcp-server
    ```
 
-2. Create and activate a virtual environment and Install the required packages:
+2. Install dependencies using uv:
 
-    **Option A: Using pip (traditional)**
+    This project uses uv for dependency management. To use uv, you'll first need to install it. See the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/) for detailed installation instructions for your platform.
 
     ```bash
-    python3 -m venv myvenv
-    source myvenv/bin/activate  # On Windows: myvenv\Scripts\activate
-    pip install -r requirements.txt
+    uv sync
     ```
 
-    **Option B: Using uv (modern, faster)**
+    This will automatically create a virtual environment (`.venv`) and install all dependencies from `pyproject.toml`.
 
-    To use uv, you'll first need to install it. See the [official uv installation guide](https://docs.astral.sh/uv/getting-started/installation/) for detailed installation instructions for your platform.
-    ```bash
-    uv venv myvenv
-    source myvenv/bin/activate # On Windows: myvenv\Scripts\activate
-    uv pip install -r requirements.txt
-    ```
-    **Note:** The virtual environment will use the Python version that was used to create it. If you run the command with Python 3.10 or newer, your virtual environment will also use Python 3.10+. If you want to confirm the version, you can run `python3 --version` after activating the virtual environment. 
+    **Note:** The project requires Python 3.10 or newer. uv will automatically use an appropriate Python version. 
 
 
 ## Project Structure
 
-After cloning and activating the virtual environment, your directory structure should look like this:
+After cloning and running `uv sync`, your directory structure should look like this:
 ```
 alpaca-mcp-server/          ← This is the workspace folder (= project root)
-├── alpaca_mcp_server.py    ← Script is directly in workspace root
-├── .github/                ← VS Code settings (for VS Code users)
+├── alpaca_mcp_server.py    ← Main server script
+├── .github/                ← GitHub workflows and core utilities
 │ ├── core/                 ← Core utility modules
 │ └── workflows/            ← GitHub Actions workflows
 ├── .vscode/                ← VS Code settings (for VS Code users)
 │   └── mcp.json
-├── venv/                   ← Virtual environment folder
-│   └── bin/python
+├── .venv/                  ← Virtual environment (created by uv)
 ├── .env.example            ← Environment template (use this to create `.env` file)
 ├── .gitignore              
 ├── Dockerfile              ← Docker configuration (for Docker use)
-├── .dockerignore           ← Docker ignore (for Docker use)
-├── requirements.txt           
+├── docker-compose.yml      ← Docker Compose configuration with OAuth token persistence
+├── pyproject.toml          ← Project configuration and dependencies
+├── uv.lock                 ← Dependency lock file
 └── README.md
 ```
 
@@ -103,9 +95,15 @@ alpaca-mcp-server/          ← This is the workspace folder (= project root)
    ALPACA_SECRET_KEY = "your_alpaca_secret_key_for_paper_account"
    ALPACA_PAPER_TRADE = True
    TRADE_API_URL = None
-   TRDE_API_WSS = None
+   TRADE_API_WSS = None
    DATA_API_URL = None
    STREAM_DATA_WSS = None
+   
+   # OAuth Configuration for Pocket ID (optional, for HTTP transport with authentication)
+   POCKET_ID_DOMAIN = "https://your-pocket-id-domain.com"
+   POCKET_ID_CLIENT_ID = "your_pocket_id_client_id"
+   POCKET_ID_CLIENT_SECRET = "your_pocket_id_client_secret"
+   OAUTH_REDIRECT_URI = "http://localhost:8000/oauth/callback"
    ```
 
 ## 3. Start the MCP Server
@@ -114,12 +112,12 @@ Open a terminal in the project root directory and run the following command:
 
 **For local usage (default - stdio transport):**
 ```bash
-python alpaca_mcp_server.py
+uv run python alpaca_mcp_server.py
 ```
 
 **For remote usage (HTTP transport):**
 ```bash
-python alpaca_mcp_server.py --transport http
+uv run python alpaca_mcp_server.py --transport http
 ```
 
 **Available transport options:**
@@ -142,16 +140,20 @@ To use Alpaca MCP Server with Claude Desktop, please follow the steps below. The
 3. Update your `claude_desktop_config.json`:
 
   **Note:**\
-    Replace <project_root> with the path to your cloned alpaca-mcp-server directory. This should point to the Python executable inside the virtual environment you created with `python3 -m venv venv` in the terminal.
+    Replace <project_root> with the path to your cloned alpaca-mcp-server directory. With uv, the virtual environment is automatically managed.
 
 **For local usage (stdio transport - recommended):**
 ```json
 {
   "mcpServers": {
     "alpaca": {
-      "command": "<project_root>/venv/bin/python",
+      "command": "uv",
       "args": [
-        "/path/to/alpaca-mcp-server/alpaca_mcp_server.py"
+        "run",
+        "--directory",
+        "/path/to/alpaca-mcp-server",
+        "python",
+        "alpaca_mcp_server.py"
       ],
       "env": {
         "ALPACA_API_KEY": "your_alpaca_api_key_for_paper_account",
